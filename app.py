@@ -342,6 +342,8 @@ def api_snapshot():
     cur.execute("SELECT asset, price_eur FROM prices"); rows = cur.fetchall(); c.close()
     return jsonify({r["asset"]: r["price_eur"] for r in rows})
 
+import os
+
 if __name__ == "__main__":
-    bootstrap()
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))  # Render sets PORT dynamically
+    app.run(host="0.0.0.0", port=port)
