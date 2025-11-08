@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+  <div class="col-md-4">
+    <div class="card p-3 mb-3">
+      <h5>Rates (EUR per unit)</h5>
+      <ul class="list-unstyled">
+        {% for k,v in rates.items() %}
+          <li><strong>{{ k }}:</strong> €{{ "%.2f"|format(v) }}</li>
+        {% endfor %}
+      </ul>
+
+      <hr>
+      <h6>Choose asset</h6>
+      <select id="assetSelect" class="form-select mb-2">
+        {% for code in assets.keys() %}
+          <option value="{{ code }}">{{ code }}</option>
+        {% endfor %}
+      </select>
+      <button id="refreshBtn" class="btn btn-primary btn-sm">Refresh Chart</button>
+
+      <hr>
+      <h6>Your balances</h6>
+      <ul id="balancesList" class="list-unstyled">
+        {% for k, v in balances.items() %}
+          <li>{{ k }}: {{ "%.4f"|format(v) }}</li>
+        {% endfor %}
+      </ul>
+
+      <hr>
+      <h6>Your investments</h6>
+      <ul class="list-unstyled">
+        {% if investments %}
+          {% for asset, shares in investments.items() %}
+            <li>{{ asset }}: {{ "%.4f"|format(shares) }} shares (price €{{ "%.2f"|format(assets[asset]) if assets and assets.get(asset) else 'n/a' }})</li>
+          {% endfor %}
+        {% else %}
+          <li>No investments</li>
+        {% endif %}
+      </ul>
+
+      <form method="post" action="{{ url_for('cashout_route') }}">
+        <button class="btn btn-success btn-sm mt-2">Cash out investments (once/day)</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card p-3 mb-3">
+      <canvas id="chartCanvas" height="260"></canvas>
+    </div>
+
+    <div class="card p-3">
+      <h5>Recent logs</h5>
+      <div style="max-height:280px; overflow:auto;">
+        <ul id="logsList">
+          {% for l in logs %}
+            <li>[{{ l.ts }}] {{ l.level }} — {{ l.message }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const snapshot = {{ assets | tojson }};
+const rates = {{ rates | tojson }};
+let asset = document.getElementById("assetSelect").value;
+const ctx = document.getElementById("chartCanvas").getContext("2d");
+const labels = [];
+const dataPoints = [];
+const maxPoints = 60;
+
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: { labels: labels, datasets: [{ label: asset + " price (EUR)", data: dataPoints, borderColor: 'rgb(37,99,235)', tension:0.2 }] },
+  options: { responsive:true, animation:false, scales:{ y:{ beginAtZero:false } } }
+});
+
+function pushTick(value) {
+  const now = new Date();
+  labels.push(now.toLocaleTimeString());
+  dataPoints.push(Number(value.toFixed(4)));
+  if (labels.length > maxPoints) { labels.shift(); dataPoints.shift(); }
+  chart.update();
+}
+
+function initAsset(a) {
+  asset = a;
+  chart.data.datasets[0].label = asset + " price (EUR)";
+  labels.length = 0; dataPoints.length = 0;
+  const start = snapshot[asset] || 0.0;
+  pushTick(start);
+}
+
+let price = snapshot[asset] || 0.0;
+function tick() {
+  const noise = (Math.random() - 0.5) * price * 0.004;
+  price = Math.max(0.0001, price + noise);
+  pushTick(price);
+}
+
+document.getElementById("assetSelect").addEventListener("change", (e)=>{ initAsset(e.target.value); price = snapshot[e.target.value]; });
+
+document.getElementById("refreshBtn").addEventListener("click", async ()=>{
+  const r = await fetch('/api/snapshot');
+  if (r.ok) {
+    const j = await r.json();
+    for (const k in j) snapshot[k] = j[k];
+    price = snapshot[asset];
+    initAsset(asset);
+  }
+});
+
+initAsset(asset);
+setInterval(tick, 2000);
+</script>
+{% endblock %}
